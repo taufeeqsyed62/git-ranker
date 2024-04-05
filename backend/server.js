@@ -1,94 +1,71 @@
-const express = require('express');
-const bodyParser = require('body-parser');
-const axios = require('axios');
-const mongoose = require('mongoose');
-const cors = require('cors');
+import React, { useState } from 'react';
+import axios from 'axios';
 
-const app = express();
+const App = () => {
+  const [codeforcesId, setCodeforcesId] = useState('');
+  const [userInfo, setUserInfo] = useState(null);
+  const [collegeRank, setCollegeRank] = useState(null);
 
-const PORT = process.env.PORT || 5000;
-app.use(cors());
-mongoose.connect('mongodb://localhost:27017/codeforcesrank', {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-});
-const db = mongoose.connection;
-db.once('open', () => console.log('Connected to MongoDB'));
-db.on('error', console.error.bind(console, 'MongoDB connection error:'));
+  const handleCodeforcesIdChange = (e) => {
+    setCodeforcesId(e.target.value);
+  };
 
-const userRankingSchema = new mongoose.Schema({
-  codeforcesId: String,
-  maxRating: Number,
-  contests: Number,
-  problemsSolved: Number,
-  friends: Number,
-  contributions: Number,
-  rating: Number
-});
-const UserRanking = mongoose.model('UserRanking', userRankingSchema);
+  const handleSubmit = async () => {
+    try {
+      await axios.post('http://localhost:5000/api/addUsername', { codeforcesId });
 
-app.use(bodyParser.json());
+      const response = await axios.get(`http://localhost:5000/api/getUserInfo/${codeforcesId}`);
+      const userData = response.data;
 
-app.post('/api/addUsername', async (req, res) => {
-  const { codeforcesId } = req.body;
-  try {
-    const newUserRanking = new UserRanking({ codeforcesId });
-    await newUserRanking.save();
-    res.status(201).json({ message: 'Username added successfully' });
-  } catch (error) {
-    console.error('Error adding username:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
+      await axios.post('http://localhost:5000/api/updateMongoDB', { 
+        codeforcesId, 
+        maxRating: userData.maxRating, 
+        contests: userData.contests, 
+        problemsSolved: userData.problemsSolved, 
+        friends: userData.friends, 
+        contributions: userData.contributions,
+        rating: userData.rating 
+      });
 
-app.get('/api/getUserInfo/:codeforcesId', async (req, res) => {
-  const { codeforcesId } = req.params;
-  try {
-    const response = await axios.get(`https://codeforces.com/api/user.info?handles=${codeforcesId}`);
-    const { data } = response;
-    if (data.status === 'OK') {
-      const userInfo = {
-        maxRating: data.result[0].maxRating,
-        contests: data.result[0].contestCount,
-        problemsSolved: data.result[0].problemCount,
-        friends: data.result[0].friendOfCount,
-        contributions: data.result[0].contribution,
-        rating: data.result[0].rating
-      };
-      res.json(userInfo);
-    } else {
-      res.status(404).json({ error: 'User not found' });
+      setUserInfo(userData);
+    } catch (error) {
+      console.error('Error:', error);
     }
-  } catch (error) {
-    console.error('Error getting user info:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
+  };
 
-app.post('/api/updateMongoDB', async (req, res) => {
-  const { codeforcesId, maxRating, contests, problemsSolved, friends, contributions, rating } = req.body;
-  try {
-    await UserRanking.updateOne({ codeforcesId }, { maxRating, contests, problemsSolved, friends, contributions, rating });
-    res.json({ message: 'MongoDB updated successfully' });
-  } catch (error) {
-    console.error('Error updating MongoDB:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-app.get('/api/getCollegeRank/:codeforcesId', async (req, res) => {
-  const { codeforcesId } = req.params;
-  try {
-    const user = await UserRanking.findOne({ codeforcesId });
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
+  const handleGetCollegeRank = async () => {
+    try {
+      const response = await axios.get(`http://localhost:5000/api/getCollegeRank/${codeforcesId}`);
+      setCollegeRank(response.data.collegeRank);
+    } catch (error) {
+      console.error('Error:', error);
     }
-    const collegeRank = await UserRanking.countDocuments({ rating: { $gt: user.rating } });
-    res.json({ collegeRank: collegeRank + 1 });
-  } catch (error) {
-    console.error('Error getting college rank:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
+  };
 
-app.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
+  return (
+    <div>
+      <h1>Codeforces Ranking System</h1>
+      <label htmlFor="codeforcesId">Enter Codeforces ID:</label>
+      <input type="text" id="codeforcesId" value={codeforcesId} onChange={handleCodeforcesIdChange} />
+      <button onClick={handleSubmit}>Submit</button>
+
+      {userInfo && (
+        <div>
+          <p>Your Rating: {userInfo.rating}</p>
+          <p>Your Max Rating: {userInfo.maxRating}</p>
+          <p>Contests Participated: {userInfo.contests}</p>
+          <p>Problems Solved: {userInfo.problemsSolved}</p>
+          <p>Friends: {userInfo.friends}</p>
+          <p>Contributions: {userInfo.contributions}</p>
+          
+        </div>
+      )}
+
+      <button onClick={handleGetCollegeRank}>Get College Rank</button>
+
+      {collegeRank && <p>Your College Rank: {collegeRank}</p>}
+    </div>
+  );
+};
+
+export default App;
