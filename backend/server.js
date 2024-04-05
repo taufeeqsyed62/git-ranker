@@ -1,16 +1,13 @@
-// server.js
-
 const express = require('express');
 const bodyParser = require('body-parser');
 const axios = require('axios');
 const mongoose = require('mongoose');
-const cors = require('cors'); 
+const cors = require('cors');
 
 const app = express();
 
-const PORT = process.env.PORT || 5000; // Update port number to 5000
+const PORT = process.env.PORT || 5000;
 app.use(cors());
-// Connect to MongoDB
 mongoose.connect('mongodb://localhost:27017/codeforcesrank', {
   useNewUrlParser: true,
   useUnifiedTopology: true,
@@ -19,16 +16,19 @@ const db = mongoose.connection;
 db.once('open', () => console.log('Connected to MongoDB'));
 db.on('error', console.error.bind(console, 'MongoDB connection error:'));
 
-// Define schema and model for user rankings
 const userRankingSchema = new mongoose.Schema({
   codeforcesId: String,
   maxRating: Number,
+  contests: Number,
+  problemsSolved: Number,
+  friends: Number,
+  contributions: Number,
+  rating: Number
 });
 const UserRanking = mongoose.model('UserRanking', userRankingSchema);
 
 app.use(bodyParser.json());
 
-// Add username to API
 app.post('/api/addUsername', async (req, res) => {
   const { codeforcesId } = req.body;
   try {
@@ -41,30 +41,34 @@ app.post('/api/addUsername', async (req, res) => {
   }
 });
 
-// Get maxRating from Codeforces API
-app.get('/api/getMaxRating/:codeforcesId', async (req, res) => {
+app.get('/api/getUserInfo/:codeforcesId', async (req, res) => {
   const { codeforcesId } = req.params;
   try {
-    // Fetch user info from Codeforces API
-    const response = await axios.get(`https://codeforces.com/api/user.info?handles=${codeforcesId}&checkHistoricHandles=false`);
-    const { result } = response.data;
-    if (result.length > 0) {
-      const { maxRating } = result[0];
-      res.json({ maxRating });
+    const response = await axios.get(`https://codeforces.com/api/user.info?handles=${codeforcesId}`);
+    const { data } = response;
+    if (data.status === 'OK') {
+      const userInfo = {
+        maxRating: data.result[0].maxRating,
+        contests: data.result[0].contestCount,
+        problemsSolved: data.result[0].problemCount,
+        friends: data.result[0].friendOfCount,
+        contributions: data.result[0].contribution,
+        rating: data.result[0].rating
+      };
+      res.json(userInfo);
     } else {
       res.status(404).json({ error: 'User not found' });
     }
   } catch (error) {
-    console.error('Error getting maxRating:', error);
+    console.error('Error getting user info:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// Update MongoDB with maxRating
 app.post('/api/updateMongoDB', async (req, res) => {
-  const { codeforcesId, maxRating } = req.body;
+  const { codeforcesId, maxRating, contests, problemsSolved, friends, contributions, rating } = req.body;
   try {
-    await UserRanking.updateOne({ codeforcesId }, { maxRating });
+    await UserRanking.updateOne({ codeforcesId }, { maxRating, contests, problemsSolved, friends, contributions, rating });
     res.json({ message: 'MongoDB updated successfully' });
   } catch (error) {
     console.error('Error updating MongoDB:', error);
@@ -72,19 +76,19 @@ app.post('/api/updateMongoDB', async (req, res) => {
   }
 });
 
-
-// Get college rank based on maxRating
-app.get('/api/getCollegeRank/:maxRating', async (req, res) => {
-  const { maxRating } = req.params;
+app.get('/api/getCollegeRank/:codeforcesId', async (req, res) => {
+  const { codeforcesId } = req.params;
   try {
-    // Retrieve college rank from MongoDB based on maxRating
-    const collegeRank = await UserRanking.countDocuments({ maxRating: { $gte: maxRating } });
-    res.json({ collegeRank });
+    const user = await UserRanking.findOne({ codeforcesId });
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    const collegeRank = await UserRanking.countDocuments({ rating: { $gt: user.rating } });
+    res.json({ collegeRank: collegeRank + 1 });
   } catch (error) {
     console.error('Error getting college rank:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
-
 
 app.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
